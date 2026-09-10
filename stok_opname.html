@@ -13,6 +13,9 @@
   table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
   td, th { border: 1px solid #ccc; padding: 4px; text-align: left; }
   .info { background: #f1f5f9; padding: 8px; border-radius: 6px; margin: 8px 0; }
+  .manual-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+  .manual-row input { flex: 1; margin: 0; }
+  .manual-row button { width: auto; padding: 10px 16px; margin: 0; }
 </style>
 </head>
 <body>
@@ -21,8 +24,20 @@
   <label>Lokasi</label>
   <input id="lokasi" placeholder="Contoh: Gudang A / Rak 3">
 
+  <label>Penghitung</label>
+  <select id="penghitung">
+    <option value="">-- Pilih --</option>
+    <option value="Penghitung 1">Penghitung 1</option>
+    <option value="Penghitung 2">Penghitung 2</option>
+  </select>
+
   <button onclick="startScan()">Mulai Scan</button>
   <div id="reader"></div>
+
+  <div class="manual-row">
+    <input id="kodeManual" placeholder="Atau ketik kode barang manual">
+    <button onclick="cariManual()">Cari</button>
+  </div>
 
   <div class="info" id="hasilScan" style="display:none">
     <div><b id="namaBarang"></b></div>
@@ -39,7 +54,7 @@
   <button onclick="simpanSemua()" style="background:#16a34a; margin-top:15px;">Simpan ke Google Sheets</button>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycbzLwoEeobY5msLtFxmlJpIxrWtbVr7wFp2HVNEeLkQWAexfJf4DuSWNjfgbmly5sPzGgQ/exec";
+const API_URL = "PASTE_URL_WEB_APP_DISINI";
 
 let daftarItem = [];
 let kodeAktif = "";
@@ -58,6 +73,16 @@ function startScan() {
 
 function onScanSuccess(kode) {
   scanner.stop();
+  cariBarang(kode);
+}
+
+function cariManual() {
+  const kode = document.getElementById("kodeManual").value.trim();
+  if (!kode) { alert("Ketik kode barang dulu"); return; }
+  cariBarang(kode);
+}
+
+function cariBarang(kode) {
   fetch(API_URL + "?kode=" + encodeURIComponent(kode))
     .then(r => r.json())
     .then(data => {
@@ -68,9 +93,9 @@ function onScanSuccess(kode) {
         document.getElementById("namaBarang").innerText = data.nama;
         document.getElementById("golonganBarang").innerText = "Golongan: " + data.golongan;
         document.getElementById("hasilScan").style.display = "block";
+        document.getElementById("kodeManual").value = "";
       } else {
         alert("Kode barang tidak ditemukan: " + kode);
-        startScan();
       }
     });
 }
@@ -95,14 +120,16 @@ function renderTabel() {
 
 function simpanSemua() {
   const lokasi = document.getElementById("lokasi").value;
+  const penghitung = document.getElementById("penghitung").value;
   if (!lokasi) { alert("Isi lokasi dulu"); return; }
+  if (!penghitung) { alert("Pilih penghitung dulu (1 atau 2)"); return; }
   if (daftarItem.length === 0) { alert("Belum ada item"); return; }
 
   fetch(API_URL, {
     method: "POST",
-    body: JSON.stringify({ lokasi: lokasi, items: daftarItem })
+    body: JSON.stringify({ lokasi: lokasi, penghitung: penghitung, items: daftarItem })
   }).then(r => r.json()).then(res => {
-    alert("Tersimpan " + res.count + " item ke lokasi " + lokasi);
+    alert("Tersimpan " + res.count + " item - " + penghitung + " - lokasi " + lokasi);
     daftarItem = [];
     renderTabel();
   });
