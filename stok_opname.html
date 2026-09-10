@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stok Opname Scan</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+  body { font-family: sans-serif; max-width: 480px; margin: auto; padding: 10px; }
+  input, select, button { width: 100%; padding: 10px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+  button { background: #2563eb; color: white; border: none; border-radius: 6px; }
+  #reader { width: 100%; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  td, th { border: 1px solid #ccc; padding: 4px; text-align: left; }
+  .info { background: #f1f5f9; padding: 8px; border-radius: 6px; margin: 8px 0; }
+</style>
+</head>
+<body>
+  <h3>Stok Opname - Scan Barcode</h3>
+
+  <label>Lokasi</label>
+  <input id="lokasi" placeholder="Contoh: Gudang A / Rak 3">
+
+  <button onclick="startScan()">Mulai Scan</button>
+  <div id="reader"></div>
+
+  <div class="info" id="hasilScan" style="display:none">
+    <div><b id="namaBarang"></b></div>
+    <div id="golonganBarang"></div>
+    <input id="qty" type="number" placeholder="Qty">
+    <button onclick="tambahItem()">Tambah ke Daftar</button>
+  </div>
+
+  <table id="tabelHasil">
+    <thead><tr><th>Kode</th><th>Nama</th><th>Qty</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <button onclick="simpanSemua()" style="background:#16a34a; margin-top:15px;">Simpan ke Google Sheets</button>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbzLwoEeobY5msLtFxmlJpIxrWtbVr7wFp2HVNEeLkQWAexfJf4DuSWNjfgbmly5sPzGgQ/exec";
+
+let daftarItem = [];
+let kodeAktif = "";
+let namaAktif = "";
+let golonganAktif = "";
+let scanner;
+
+function startScan() {
+  scanner = new Html5Qrcode("reader");
+  scanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    onScanSuccess
+  );
+}
+
+function onScanSuccess(kode) {
+  scanner.stop();
+  fetch(API_URL + "?kode=" + encodeURIComponent(kode))
+    .then(r => r.json())
+    .then(data => {
+      if (data.found) {
+        kodeAktif = data.kode;
+        namaAktif = data.nama;
+        golonganAktif = data.golongan;
+        document.getElementById("namaBarang").innerText = data.nama;
+        document.getElementById("golonganBarang").innerText = "Golongan: " + data.golongan;
+        document.getElementById("hasilScan").style.display = "block";
+      } else {
+        alert("Kode barang tidak ditemukan: " + kode);
+        startScan();
+      }
+    });
+}
+
+function tambahItem() {
+  const qty = document.getElementById("qty").value;
+  if (!qty) { alert("Isi qty dulu"); return; }
+  daftarItem.push({ kode: kodeAktif, nama: namaAktif, golongan: golonganAktif, qty: qty });
+  renderTabel();
+  document.getElementById("hasilScan").style.display = "none";
+  document.getElementById("qty").value = "";
+  startScan();
+}
+
+function renderTabel() {
+  const tbody = document.querySelector("#tabelHasil tbody");
+  tbody.innerHTML = "";
+  daftarItem.forEach(item => {
+    tbody.innerHTML += `<tr><td>${item.kode}</td><td>${item.nama}</td><td>${item.qty}</td></tr>`;
+  });
+}
+
+function simpanSemua() {
+  const lokasi = document.getElementById("lokasi").value;
+  if (!lokasi) { alert("Isi lokasi dulu"); return; }
+  if (daftarItem.length === 0) { alert("Belum ada item"); return; }
+
+  fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify({ lokasi: lokasi, items: daftarItem })
+  }).then(r => r.json()).then(res => {
+    alert("Tersimpan " + res.count + " item ke lokasi " + lokasi);
+    daftarItem = [];
+    renderTabel();
+  });
+}
+</script>
+</body>
+</html>
