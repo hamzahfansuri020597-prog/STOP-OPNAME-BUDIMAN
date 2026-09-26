@@ -56,7 +56,6 @@ function cariManual() {
   if (!kode) { alert("Ketik kode barang dulu"); return; }
   cariBarang(kode);
 }
-
 function cariBarang(kode) {
   const hasilDiv = document.getElementById("hasilCek");
   hasilDiv.innerHTML = "Mencari...";
@@ -78,8 +77,9 @@ function cariBarang(kode) {
         hasilDiv.innerHTML = `<b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan / salah kode.`;
       }
       document.getElementById("kodeManual").value = "";
+    })
+    .catch(err => {
+      hasilDiv.className = "hasil tidak-ada";
+      hasilDiv.innerHTML = "<b>Terjadi error:</b><br>" + err.message;
     });
 }
-</script>
-</body>
-</html>
