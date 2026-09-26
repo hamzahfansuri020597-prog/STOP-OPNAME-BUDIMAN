@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cek Barang vs PO</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+  body { font-family: sans-serif; max-width: 480px; margin: auto; padding: 10px; }
+  input, button { width: 100%; padding: 10px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+  button { background: #2563eb; color: white; border: none; border-radius: 6px; }
+  #reader { width: 100%; }
+  .manual-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
+  .manual-row input { flex: 1; margin: 0; }
+  .manual-row button { width: auto; padding: 10px 16px; margin: 0; }
+  .hasil { background: #f1f5f9; padding: 14px; border-radius: 8px; margin-top: 14px; font-size: 16px; }
+  .hasil b { font-size: 18px; }
+  .qty-order { font-size: 22px; font-weight: bold; color: #16a34a; margin-top: 6px; }
+  .tidak-ada { background: #fee2e2; color: #991b1b; }
+</style>
+</head>
+<body>
+  <h3>Cek Barang Datang vs Master PO</h3>
+
+  <button onclick="startScan()">Mulai Scan</button>
+  <div id="reader"></div>
+
+  <div class="manual-row">
+    <input id="kodeManual" placeholder="Atau ketik kode barang manual">
+    <button onclick="cariManual()">Cari</button>
+  </div>
+
+  <div class="hasil" id="hasilCek" style="display:none"></div>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbxw5Pum7Bk-cSStTDnCb-V3FBNMAcOEafjUxXGGYXJDcDA_nmQryi9IaALyPyuu-BK6/exec";
+
+let scanner;
+
+function startScan() {
+  scanner = new Html5Qrcode("reader");
+  scanner.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    onScanSuccess
+  );
+}
+
+function onScanSuccess(kode) {
+  scanner.stop();
+  cariBarang(kode);
+}
+
+function cariManual() {
+  const kode = document.getElementById("kodeManual").value.trim();
+  if (!kode) { alert("Ketik kode barang dulu"); return; }
+  cariBarang(kode);
+}
+
+function cariBarang(kode) {
+  const hasilDiv = document.getElementById("hasilCek");
+  hasilDiv.innerHTML = "Mencari...";
+  hasilDiv.className = "hasil";
+  hasilDiv.style.display = "block";
+
+  fetch(API_URL + "?kode=" + encodeURIComponent(kode))
+    .then(r => r.json())
+    .then(data => {
+      if (data.found) {
+        hasilDiv.className = "hasil";
+        hasilDiv.innerHTML = `
+          <div>Kode: ${data.kode}</div>
+          <b>${data.nama}</b>
+          <div class="qty-order">Qty Order: ${data.qty_order}</div>
+        `;
+      } else {
+        hasilDiv.className = "hasil tidak-ada";
+        hasilDiv.innerHTML = `<b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan / salah kode.`;
+      }
+      document.getElementById("kodeManual").value = "";
+    });
+}
+</script>
+</body>
+</html>
