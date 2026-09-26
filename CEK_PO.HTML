@@ -56,6 +56,7 @@ function cariManual() {
   if (!kode) { alert("Ketik kode barang dulu"); return; }
   cariBarang(kode);
 }
+
 function cariBarang(kode) {
   const hasilDiv = document.getElementById("hasilCek");
   hasilDiv.innerHTML = "Mencari...";
@@ -83,3 +84,6 @@ function cariBarang(kode) {
       hasilDiv.innerHTML = "<b>Terjadi error:</b><br>" + err.message;
     });
 }
+</script>
+</body>
+</html>
