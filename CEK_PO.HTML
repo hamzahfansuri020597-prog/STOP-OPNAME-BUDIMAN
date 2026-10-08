@@ -6,17 +6,24 @@
 <title>Cek Barang vs PO</title>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <style>
-  body { font-family: sans-serif; max-width: 480px; margin: auto; padding: 10px; }
-  input, button { width: 100%; padding: 10px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
-  button { background: #2563eb; color: white; border: none; border-radius: 6px; }
+  body { font-family: sans-serif; max-width: 480px; margin: auto; padding: 10px; background: #f8fafc; }
+  h3 { margin: 8px 0 12px; }
+  input, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+  button { background: #2563eb; color: white; border: none; border-radius: 8px; }
   #reader { width: 100%; }
   .manual-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
-  .manual-row input { flex: 1; margin: 0; }
-  .manual-row button { width: auto; padding: 10px 16px; margin: 0; }
-  .hasil { background: #f1f5f9; padding: 14px; border-radius: 8px; margin-top: 14px; font-size: 16px; }
-  .hasil b { font-size: 18px; }
-  .qty-order { font-size: 22px; font-weight: bold; color: #16a34a; margin-top: 6px; }
-  .tidak-ada { background: #fee2e2; color: #991b1b; }
+  .manual-row input { flex: 1; margin: 0; border: 1px solid #94a3b8; border-radius: 8px; }
+  .manual-row button { width: auto; padding: 12px 18px; margin: 0; }
+  .ringkas { margin-top: 14px; font-size: 14px; color: #475569; }
+  .kartu { background: white; border: 1px solid #e2e8f0; border-left: 6px solid #16a34a; border-radius: 10px; padding: 14px; margin-top: 12px; }
+  .kartu .kode { font-size: 13px; color: #64748b; }
+  .kartu .nama { font-size: 19px; font-weight: bold; margin: 4px 0 10px; }
+  .baris { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid #f1f5f9; font-size: 15px; }
+  .baris span:first-child { color: #64748b; }
+  .baris span:last-child { font-weight: bold; text-align: right; }
+  .qty { font-size: 22px; color: #16a34a; }
+  .tidak-ada { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 14px; margin-top: 14px; border-left: 6px solid #dc2626; }
+  .loading { background: #eef2ff; border-radius: 10px; padding: 14px; margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -30,7 +37,7 @@
     <button onclick="cariManual()">Cari</button>
   </div>
 
-  <div class="hasil" id="hasilCek" style="display:none"></div>
+  <div id="hasilCek"></div>
 
 <script>
 const API_URL = "https://script.google.com/macros/s/AKfycbxw5Pum7Bk-cSStTDnCb-V3FBNMAcOEafjUxXGGYXJDcDA_nmQryi9IaALyPyuu-BK6/exec";
@@ -59,29 +66,32 @@ function cariManual() {
 
 function cariBarang(kode) {
   const hasilDiv = document.getElementById("hasilCek");
-  hasilDiv.innerHTML = "Mencari...";
-  hasilDiv.className = "hasil";
-  hasilDiv.style.display = "block";
+  hasilDiv.innerHTML = '<div class="loading">Mencari...</div>';
 
   fetch(API_URL + "?kode=" + encodeURIComponent(kode))
     .then(r => r.json())
     .then(data => {
       if (data.found) {
-        hasilDiv.className = "hasil";
-        hasilDiv.innerHTML = `
-          <div>Kode: ${data.kode}</div>
-          <b>${data.nama}</b>
-          <div class="qty-order">Qty Order: ${data.qty_order}</div>
-        `;
+        let html = '<div class="ringkas">Ditemukan di ' + data.jumlah + ' PO</div>';
+        data.items.forEach(item => {
+          html += `
+            <div class="kartu">
+              <div class="kode">Kode: ${item.kode}</div>
+              <div class="nama">${item.nama}</div>
+              <div class="baris"><span>Supplier</span><span>${item.supplier}</span></div>
+              <div class="baris"><span>Tanggal PO</span><span>${item.tgl_po}</span></div>
+              <div class="baris"><span>No. PO</span><span>${item.no_po}</span></div>
+              <div class="baris"><span>Qty Order</span><span class="qty">${item.qty_order}</span></div>
+            </div>`;
+        });
+        hasilDiv.innerHTML = html;
       } else {
-        hasilDiv.className = "hasil tidak-ada";
-        hasilDiv.innerHTML = `<b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan / salah kode.`;
+        hasilDiv.innerHTML = `<div class="tidak-ada"><b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan atau salah kode.</div>`;
       }
       document.getElementById("kodeManual").value = "";
     })
     .catch(err => {
-      hasilDiv.className = "hasil tidak-ada";
-      hasilDiv.innerHTML = "<b>Terjadi error:</b><br>" + err.message;
+      hasilDiv.innerHTML = '<div class="tidak-ada"><b>Terjadi error:</b><br>' + err.message + '</div>';
     });
 }
 </script>
