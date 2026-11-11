@@ -44,6 +44,37 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxw5Pum7Bk-cSStTDnCb-V3
 
 let scanner;
 
+// ===== Konfirmasi keluar saat tombol kembali ditekan =====
+let guardAktif = false;
+
+function aktifkanGuard() {
+  if (guardAktif) return;
+  guardAktif = true;
+  history.pushState({ guard: true }, "", location.href);
+}
+
+// Browser hanya mengizinkan ini setelah ada sentuhan/klik pertama
+document.addEventListener("click", aktifkanGuard, { once: true });
+document.addEventListener("touchstart", aktifkanGuard, { once: true });
+
+window.addEventListener("popstate", function () {
+  if (!guardAktif) return;
+  if (confirm("Keluar dari aplikasi Cek PO?")) {
+    guardAktif = false;
+    history.back();
+  } else {
+    history.pushState({ guard: true }, "", location.href);
+  }
+});
+
+// Peringatan juga saat refresh atau tutup tab
+window.addEventListener("beforeunload", function (e) {
+  if (guardAktif) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
 function startScan() {
   scanner = new Html5Qrcode("reader");
   scanner.start(
