@@ -25,17 +25,18 @@
   .tidak-ada { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 14px; margin-top: 14px; border-left: 6px solid #dc2626; }
   .loading { background: #eef2ff; border-radius: 10px; padding: 14px; margin-top: 14px; }
 
-  /* Modal konfirmasi keluar */
-  #modalKeluar { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 9999; align-items: center; justify-content: center; padding: 20px; }
-  #modalKeluar .box { background: #fff; border-radius: 12px; padding: 20px; max-width: 320px; width: 100%; text-align: center; }
-  #modalKeluar .box p { margin: 0 0 14px; font-size: 17px; }
-  #modalKeluar .box button { width: 100%; margin: 4px 0; }
-  #modalKeluar .batal { background: #e2e8f0; color: #0f172a; }
-  #modalKeluar .ya { background: #dc2626; }
+  .riwayat-box { margin-top: 20px; background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+  .riwayat-box h4 { margin: 0 0 8px; font-size: 15px; }
+  .rw { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid #f1f5f9; font-size: 13px; }
+  .rw .kiri { flex: 1; }
+  .rw .jam { color: #64748b; font-size: 12px; }
+  .rw .ok { color: #16a34a; font-weight: bold; }
+  .rw .no { color: #dc2626; font-weight: bold; }
+  .btn-hapus { background: #e2e8f0; color: #0f172a; font-size: 14px; padding: 8px; margin-top: 8px; }
 </style>
 </head>
 <body>
-  <h3>Cek Barang Datang vs Master PO (v2)</h3>
+  <h3>Cek Barang Datang vs Master PO</h3>
 
   <button onclick="startScan()">Mulai Scan</button>
   <div id="reader"></div>
@@ -47,20 +48,80 @@
 
   <div id="hasilCek"></div>
 
-  <!-- Modal konfirmasi keluar -->
-  <div id="modalKeluar">
-    <div class="box">
-      <p>Keluar dari aplikasi Cek PO?</p>
-      <button class="batal" id="btnBatalKeluar">Tetap di sini</button>
-      <button class="ya" id="btnYaKeluar">Ya, keluar</button>
-    </div>
+  <div class="riwayat-box" id="riwayatBox" style="display:none">
+    <h4>Riwayat cek hari ini (<span id="jmlRiwayat">0</span>)</h4>
+    <div id="listRiwayat"></div>
+    <button class="btn-hapus" onclick="hapusRiwayat()">Hapus riwayat</button>
   </div>
 
 <script>
 const API_URL = "https://script.google.com/macros/s/AKfycbxw5Pum7Bk-cSStTDnCb-V3FBNMAcOEafjUxXGGYXJDcDA_nmQryi9IaALyPyuu-BK6/exec";
 
+const KEY_LAST = "cekpo_last";
+const KEY_RIWAYAT = "cekpo_riwayat";
+
 let scanner;
 
+/* ===== Penyimpanan di HP (aman dari error) ===== */
+function tanggalHariIni() {
+  return new Date().toLocaleDateString("en-CA"); // format YYYY-MM-DD sesuai zona waktu HP
+}
+
+function simpanLokal(key, nilai) {
+  try { localStorage.setItem(key, JSON.stringify(nilai)); } catch (e) {}
+}
+
+function bacaLokal(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+}
+
+function ambilRiwayatHariIni() {
+  const semua = bacaLokal(KEY_RIWAYAT) || [];
+  const hariIni = tanggalHariIni();
+  return semua.filter(function (r) { return r.tgl === hariIni; });
+}
+
+function tambahRiwayat(kode, nama, ditemukan, jumlah) {
+  const list = ambilRiwayatHariIni();
+  const jam = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  list.unshift({ tgl: tanggalHariIni(), jam: jam, kode: kode, nama: nama, ditemukan: ditemukan, jumlah: jumlah });
+  simpanLokal(KEY_RIWAYAT, list.slice(0, 200));
+  tampilRiwayat();
+}
+
+function tampilRiwayat() {
+  const list = ambilRiwayatHariIni();
+  const box = document.getElementById("riwayatBox");
+  if (list.length === 0) { box.style.display = "none"; return; }
+  box.style.display = "block";
+  document.getElementById("jmlRiwayat").textContent = list.length;
+  let html = "";
+  list.forEach(function (r) {
+    html += '<div class="rw"><div class="kiri"><div>' + r.kode + (r.nama ? " - " + r.nama : "") + '</div>' +
+            '<div class="jam">' + r.jam + '</div></div>' +
+            (r.ditemukan
+              ? '<div class="ok">ADA (' + r.jumlah + ' PO)</div>'
+              : '<div class="no">TIDAK ADA</div>') +
+            '</div>';
+  });
+  document.getElementById("listRiwayat").innerHTML = html;
+}
+
+function hapusRiwayat() {
+  if (!confirm("Hapus semua riwayat hari ini?")) return;
+  simpanLokal(KEY_RIWAYAT, []);
+  tampilRiwayat();
+}
+
+function pulihkanHasilTerakhir() {
+  const last = bacaLokal(KEY_LAST);
+  if (last && last.tgl === tanggalHariIni() && last.html) {
+    document.getElementById("hasilCek").innerHTML =
+      '<div class="ringkas">Hasil terakhir (dipulihkan)</div>' + last.html;
+  }
+}
+
+/* ===== Scan & pencarian ===== */
 function startScan() {
   scanner = new Html5Qrcode("reader");
   scanner.start(
@@ -88,8 +149,9 @@ function cariBarang(kode) {
   fetch(API_URL + "?kode=" + encodeURIComponent(kode))
     .then(r => r.json())
     .then(data => {
+      let html = "";
       if (data.found) {
-        let html = '<div class="ringkas">Ditemukan di ' + data.jumlah + ' PO</div>';
+        html = '<div class="ringkas">Ditemukan di ' + data.jumlah + ' PO</div>';
         data.items.forEach(item => {
           html += `
             <div class="kartu">
@@ -101,10 +163,13 @@ function cariBarang(kode) {
               <div class="baris"><span>Qty Order</span><span class="qty">${item.qty_order}</span></div>
             </div>`;
         });
-        hasilDiv.innerHTML = html;
+        tambahRiwayat(kode, data.items[0].nama, true, data.jumlah);
       } else {
-        hasilDiv.innerHTML = `<div class="tidak-ada"><b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan atau salah kode.</div>`;
+        html = `<div class="tidak-ada"><b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan atau salah kode.</div>`;
+        tambahRiwayat(kode, "", false, 0);
       }
+      hasilDiv.innerHTML = html;
+      simpanLokal(KEY_LAST, { tgl: tanggalHariIni(), html: html });
       document.getElementById("kodeManual").value = "";
     })
     .catch(err => {
@@ -112,43 +177,9 @@ function cariBarang(kode) {
     });
 }
 
-// ===== Konfirmasi keluar saat tombol kembali ditekan =====
-let guardAktif = false;
-
-function bukaModal() {
-  document.getElementById("modalKeluar").style.display = "flex";
-}
-function tutupModal() {
-  document.getElementById("modalKeluar").style.display = "none";
-}
-
-document.getElementById("btnBatalKeluar").onclick = function () {
-  tutupModal();
-};
-document.getElementById("btnYaKeluar").onclick = function () {
-  guardAktif = false;
-  tutupModal();
-  history.back();
-  setTimeout(function () { window.close(); }, 300);
-};
-
-function aktifkanGuard() {
-  if (guardAktif) return;
-  guardAktif = true;
-  history.pushState({ guard: true }, "", location.href);
-}
-
-// Harus dipicu tap/klik asli supaya Chrome menerima entri riwayatnya
-["click", "pointerup", "touchend"].forEach(function (ev) {
-  document.addEventListener(ev, aktifkanGuard, { passive: true });
-});
-
-window.addEventListener("popstate", function () {
-  if (!guardAktif) return;
-  // Pasang lagi entri penjaga, lalu tampilkan modal
-  history.pushState({ guard: true }, "", location.href);
-  bukaModal();
-});
+/* ===== Saat halaman dibuka ===== */
+pulihkanHasilTerakhir();
+tampilRiwayat();
 </script>
 </body>
 </html>
