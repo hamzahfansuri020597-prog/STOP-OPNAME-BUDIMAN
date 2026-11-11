@@ -24,6 +24,14 @@
   .qty { font-size: 22px; color: #16a34a; }
   .tidak-ada { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 14px; margin-top: 14px; border-left: 6px solid #dc2626; }
   .loading { background: #eef2ff; border-radius: 10px; padding: 14px; margin-top: 14px; }
+
+  /* Modal konfirmasi keluar */
+  #modalKeluar { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.5); z-index: 9999; align-items: center; justify-content: center; padding: 20px; }
+  #modalKeluar .box { background: #fff; border-radius: 12px; padding: 20px; max-width: 320px; width: 100%; text-align: center; }
+  #modalKeluar .box p { margin: 0 0 14px; font-size: 17px; }
+  #modalKeluar .box button { width: 100%; margin: 4px 0; }
+  #modalKeluar .batal { background: #e2e8f0; color: #0f172a; }
+  #modalKeluar .ya { background: #dc2626; }
 </style>
 </head>
 <body>
@@ -39,41 +47,19 @@
 
   <div id="hasilCek"></div>
 
+  <!-- Modal konfirmasi keluar -->
+  <div id="modalKeluar">
+    <div class="box">
+      <p>Keluar dari aplikasi Cek PO?</p>
+      <button class="batal" id="btnBatalKeluar">Tetap di sini</button>
+      <button class="ya" id="btnYaKeluar">Ya, keluar</button>
+    </div>
+  </div>
+
 <script>
 const API_URL = "https://script.google.com/macros/s/AKfycbxw5Pum7Bk-cSStTDnCb-V3FBNMAcOEafjUxXGGYXJDcDA_nmQryi9IaALyPyuu-BK6/exec";
 
 let scanner;
-
-// ===== Konfirmasi keluar saat tombol kembali ditekan =====
-let guardAktif = false;
-
-function aktifkanGuard() {
-  if (guardAktif) return;
-  guardAktif = true;
-  history.pushState({ guard: true }, "", location.href);
-}
-
-// Browser hanya mengizinkan ini setelah ada sentuhan/klik pertama
-document.addEventListener("click", aktifkanGuard, { once: true });
-document.addEventListener("touchstart", aktifkanGuard, { once: true });
-
-window.addEventListener("popstate", function () {
-  if (!guardAktif) return;
-  if (confirm("Keluar dari aplikasi Cek PO?")) {
-    guardAktif = false;
-    history.back();
-  } else {
-    history.pushState({ guard: true }, "", location.href);
-  }
-});
-
-// Peringatan juga saat refresh atau tutup tab
-window.addEventListener("beforeunload", function (e) {
-  if (guardAktif) {
-    e.preventDefault();
-    e.returnValue = "";
-  }
-});
 
 function startScan() {
   scanner = new Html5Qrcode("reader");
@@ -125,6 +111,44 @@ function cariBarang(kode) {
       hasilDiv.innerHTML = '<div class="tidak-ada"><b>Terjadi error:</b><br>' + err.message + '</div>';
     });
 }
+
+// ===== Konfirmasi keluar saat tombol kembali ditekan =====
+let guardAktif = false;
+
+function bukaModal() {
+  document.getElementById("modalKeluar").style.display = "flex";
+}
+function tutupModal() {
+  document.getElementById("modalKeluar").style.display = "none";
+}
+
+document.getElementById("btnBatalKeluar").onclick = function () {
+  tutupModal();
+};
+document.getElementById("btnYaKeluar").onclick = function () {
+  guardAktif = false;
+  tutupModal();
+  history.back();
+  setTimeout(function () { window.close(); }, 300);
+};
+
+function aktifkanGuard() {
+  if (guardAktif) return;
+  guardAktif = true;
+  history.pushState({ guard: true }, "", location.href);
+}
+
+// Harus dipicu tap/klik asli supaya Chrome menerima entri riwayatnya
+["click", "pointerup", "touchend"].forEach(function (ev) {
+  document.addEventListener(ev, aktifkanGuard, { passive: true });
+});
+
+window.addEventListener("popstate", function () {
+  if (!guardAktif) return;
+  // Pasang lagi entri penjaga, lalu tampilkan modal
+  history.pushState({ guard: true }, "", location.href);
+  bukaModal();
+});
 </script>
 </body>
 </html>
