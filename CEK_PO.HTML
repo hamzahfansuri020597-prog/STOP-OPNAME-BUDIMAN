@@ -25,6 +25,26 @@
   .tidak-ada { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 14px; margin-top: 14px; border-left: 6px solid #dc2626; }
   .loading { background: #eef2ff; border-radius: 10px; padding: 14px; margin-top: 14px; }
 
+  /* Garis penanda scan */
+  .scan-wrap { position: relative; }
+  #garisScan {
+    display: none; position: absolute; left: 5%; width: 90%; height: 3px;
+    background: #dc2626; box-shadow: 0 0 8px #dc2626; top: 20%;
+    z-index: 5; pointer-events: none;
+    animation: sapu 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes sapu { from { top: 20%; } to { top: 80%; } }
+  #garisScan.sukses {
+    animation: none; top: 50%; height: 4px;
+    background: #16a34a; box-shadow: 0 0 12px #16a34a;
+  }
+  #garisScan.sukses::after {
+    content: "✓ TERSCAN"; position: absolute; top: -30px; left: 50%;
+    transform: translateX(-50%); background: #16a34a; color: #fff;
+    padding: 3px 12px; border-radius: 6px; font-size: 14px;
+    font-weight: bold; white-space: nowrap;
+  }
+
   /* Tanda scan dobel */
   .peringatan { background: #fee2e2; color: #dc2626; font-weight: bold; border-radius: 10px; padding: 10px 14px; margin-top: 14px; border: 1px solid #dc2626; font-size: 15px; }
   .kartu.dobel { border-left-color: #dc2626; }
@@ -45,7 +65,10 @@
   <h3>Cek Barang Datang vs Master PO</h3>
 
   <button onclick="startScan()">Mulai Scan</button>
-  <div id="reader"></div>
+  <div class="scan-wrap">
+    <div id="reader"></div>
+    <div id="garisScan"></div>
+  </div>
 
   <div class="manual-row">
     <input id="kodeManual" placeholder="Atau ketik kode barang manual">
@@ -67,6 +90,7 @@ const KEY_LAST = "cekpo_last";
 const KEY_RIWAYAT = "cekpo_riwayat";
 
 let scanner;
+let sedangProses = false;
 
 /* ===== Penyimpanan di HP (aman dari error) ===== */
 function tanggalHariIni() {
@@ -110,7 +134,6 @@ function tampilRiwayat() {
   box.style.display = "block";
   document.getElementById("jmlRiwayat").textContent = list.length;
 
-  // Hitung jumlah scan per kode
   const hitung = {};
   list.forEach(function (r) {
     const k = String(r.kode).trim();
@@ -147,19 +170,51 @@ function pulihkanHasilTerakhir() {
   }
 }
 
+/* ===== Garis penanda scan ===== */
+function tampilGaris() {
+  const g = document.getElementById("garisScan");
+  g.classList.remove("sukses");
+  g.style.display = "block";
+}
+
+function garisSukses() {
+  document.getElementById("garisScan").classList.add("sukses");
+  try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) {}
+}
+
+function sembunyiGaris() {
+  const g = document.getElementById("garisScan");
+  g.style.display = "none";
+  g.classList.remove("sukses");
+}
+
 /* ===== Scan & pencarian ===== */
 function startScan() {
+  sedangProses = false;
   scanner = new Html5Qrcode("reader");
   scanner.start(
     { facingMode: "environment" },
     { fps: 10, qrbox: 250 },
     onScanSuccess
-  );
+  ).then(function () {
+    tampilGaris();
+  }).catch(function (err) {
+    sembunyiGaris();
+    alert("Kamera tidak bisa dibuka: " + err);
+  });
 }
 
 function onScanSuccess(kode) {
-  scanner.stop();
+  if (sedangProses) return; // cegah terbaca berkali-kali
+  sedangProses = true;
+
+  garisSukses();
   cariBarang(kode);
+
+  // Kamera dibiarkan sebentar supaya garis hijau sempat terlihat
+  setTimeout(function () {
+    scanner.stop().then(sembunyiGaris).catch(sembunyiGaris);
+  }, 700);
 }
 
 function cariManual() {
@@ -175,7 +230,6 @@ function cariBarang(kode) {
   fetch(API_URL + "?kode=" + encodeURIComponent(kode))
     .then(r => r.json())
     .then(data => {
-      // Scan ke berapa hari ini (sebelum riwayat ditambah)
       const scanKe = hitungScan(kode) + 1;
       const dobel = scanKe > 1;
 
