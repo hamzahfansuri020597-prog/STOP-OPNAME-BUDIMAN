@@ -25,6 +25,11 @@
   .tidak-ada { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 14px; margin-top: 14px; border-left: 6px solid #dc2626; }
   .loading { background: #eef2ff; border-radius: 10px; padding: 14px; margin-top: 14px; }
 
+  /* Tanda scan dobel */
+  .peringatan { background: #fee2e2; color: #dc2626; font-weight: bold; border-radius: 10px; padding: 10px 14px; margin-top: 14px; border: 1px solid #dc2626; font-size: 15px; }
+  .kartu.dobel { border-left-color: #dc2626; }
+  .kartu.dobel .kode, .kartu.dobel .nama { color: #dc2626; }
+
   .riwayat-box { margin-top: 20px; background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
   .riwayat-box h4 { margin: 0 0 8px; font-size: 15px; }
   .rw { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid #f1f5f9; font-size: 13px; }
@@ -32,6 +37,7 @@
   .rw .jam { color: #64748b; font-size: 12px; }
   .rw .ok { color: #16a34a; font-weight: bold; }
   .rw .no { color: #dc2626; font-weight: bold; }
+  .rw.merah .kiri, .rw.merah .kiri .jam { color: #dc2626; font-weight: bold; }
   .btn-hapus { background: #e2e8f0; color: #0f172a; font-size: 14px; padding: 8px; margin-top: 8px; }
 </style>
 </head>
@@ -64,7 +70,7 @@ let scanner;
 
 /* ===== Penyimpanan di HP (aman dari error) ===== */
 function tanggalHariIni() {
-  return new Date().toLocaleDateString("en-CA"); // format YYYY-MM-DD sesuai zona waktu HP
+  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD sesuai zona waktu HP
 }
 
 function simpanLokal(key, nilai) {
@@ -81,6 +87,14 @@ function ambilRiwayatHariIni() {
   return semua.filter(function (r) { return r.tgl === hariIni; });
 }
 
+// Hitung sudah berapa kali kode ini di-scan hari ini
+function hitungScan(kode) {
+  const k = String(kode).trim();
+  return ambilRiwayatHariIni().filter(function (r) {
+    return String(r.kode).trim() === k;
+  }).length;
+}
+
 function tambahRiwayat(kode, nama, ditemukan, jumlah) {
   const list = ambilRiwayatHariIni();
   const jam = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
@@ -95,9 +109,21 @@ function tampilRiwayat() {
   if (list.length === 0) { box.style.display = "none"; return; }
   box.style.display = "block";
   document.getElementById("jmlRiwayat").textContent = list.length;
+
+  // Hitung jumlah scan per kode
+  const hitung = {};
+  list.forEach(function (r) {
+    const k = String(r.kode).trim();
+    hitung[k] = (hitung[k] || 0) + 1;
+  });
+
   let html = "";
   list.forEach(function (r) {
-    html += '<div class="rw"><div class="kiri"><div>' + r.kode + (r.nama ? " - " + r.nama : "") + '</div>' +
+    const k = String(r.kode).trim();
+    const dobel = hitung[k] > 1;
+    html += '<div class="rw' + (dobel ? ' merah' : '') + '"><div class="kiri"><div>' +
+            r.kode + (r.nama ? " - " + r.nama : "") +
+            (dobel ? " (" + hitung[k] + "x scan)" : "") + '</div>' +
             '<div class="jam">' + r.jam + '</div></div>' +
             (r.ditemukan
               ? '<div class="ok">ADA (' + r.jumlah + ' PO)</div>'
@@ -149,12 +175,20 @@ function cariBarang(kode) {
   fetch(API_URL + "?kode=" + encodeURIComponent(kode))
     .then(r => r.json())
     .then(data => {
+      // Scan ke berapa hari ini (sebelum riwayat ditambah)
+      const scanKe = hitungScan(kode) + 1;
+      const dobel = scanKe > 1;
+
       let html = "";
+      if (dobel) {
+        html += '<div class="peringatan">⚠ Kode ini sudah di-scan ' + scanKe + ' kali hari ini</div>';
+      }
+
       if (data.found) {
-        html = '<div class="ringkas">Ditemukan di ' + data.jumlah + ' PO</div>';
+        html += '<div class="ringkas">Ditemukan di ' + data.jumlah + ' PO</div>';
         data.items.forEach(item => {
           html += `
-            <div class="kartu">
+            <div class="kartu${dobel ? ' dobel' : ''}">
               <div class="kode">Kode: ${item.kode}</div>
               <div class="nama">${item.nama}</div>
               <div class="baris"><span>Supplier</span><span>${item.supplier}</span></div>
@@ -165,9 +199,10 @@ function cariBarang(kode) {
         });
         tambahRiwayat(kode, data.items[0].nama, true, data.jumlah);
       } else {
-        html = `<div class="tidak-ada"><b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan atau salah kode.</div>`;
+        html += `<div class="tidak-ada"><b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan atau salah kode.</div>`;
         tambahRiwayat(kode, "", false, 0);
       }
+
       hasilDiv.innerHTML = html;
       simpanLokal(KEY_LAST, { tgl: tanggalHariIni(), html: html });
       document.getElementById("kodeManual").value = "";
