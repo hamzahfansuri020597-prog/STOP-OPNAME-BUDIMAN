@@ -8,8 +8,9 @@
 <style>
   body { font-family: sans-serif; max-width: 480px; margin: auto; padding: 10px; background: #f8fafc; }
   h3 { margin: 8px 0 12px; }
-  input, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
+  input, select, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
   button { background: #2563eb; color: white; border: none; border-radius: 8px; }
+  #namaPetugas, #tokoPilih { border: 1px solid #94a3b8; border-radius: 8px; background: white; }
   #reader { width: 100%; }
   .manual-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
   .manual-row input { flex: 1; margin: 0; border: 1px solid #94a3b8; border-radius: 8px; }
@@ -24,6 +25,22 @@
   .qty { font-size: 22px; color: #16a34a; }
   .tidak-ada { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 14px; margin-top: 14px; border-left: 6px solid #dc2626; }
   .loading { background: #eef2ff; border-radius: 10px; padding: 14px; margin-top: 14px; }
+  .info-gagal { background: #fef9c3; color: #854d0e; border-radius: 10px; padding: 10px 14px; margin-top: 14px; font-size: 14px; }
+
+  /* Garis penanda scan (diam di tengah) */
+  .scan-wrap { position: relative; }
+  #garisScan {
+    display: none; position: absolute; left: 5%; width: 90%; height: 3px;
+    background: #dc2626; box-shadow: 0 0 8px #dc2626; top: 50%;
+    z-index: 5; pointer-events: none;
+  }
+  #garisScan.sukses { height: 4px; background: #16a34a; box-shadow: 0 0 12px #16a34a; }
+  #garisScan.sukses::after {
+    content: "✓ TERSCAN"; position: absolute; top: -30px; left: 50%;
+    transform: translateX(-50%); background: #16a34a; color: #fff;
+    padding: 3px 12px; border-radius: 6px; font-size: 14px;
+    font-weight: bold; white-space: nowrap;
+  }
 
   /* Tanda scan dobel */
   .peringatan { background: #fee2e2; color: #dc2626; font-weight: bold; border-radius: 10px; padding: 10px 14px; margin-top: 14px; border: 1px solid #dc2626; font-size: 15px; }
@@ -38,14 +55,26 @@
   .rw .ok { color: #16a34a; font-weight: bold; }
   .rw .no { color: #dc2626; font-weight: bold; }
   .rw.merah .kiri, .rw.merah .kiri .jam { color: #dc2626; font-weight: bold; }
-  .btn-hapus { background: #e2e8f0; color: #0f172a; font-size: 14px; padding: 8px; margin-top: 8px; }
+  .btn-refresh { background: #e2e8f0; color: #0f172a; font-size: 14px; padding: 8px; margin-top: 8px; }
 </style>
 </head>
 <body>
   <h3>Cek Barang Datang vs Master PO</h3>
 
+   <select id="tokoPilih">
+    <option value="">-- Pilih toko --</option>
+    <option value="1">BUDIMAN SIMPANG TIGA</option>
+    <option value="2">BUDIMAN ARIFIN AHMAD</option>
+    <option value="3">BUDIMAN PANAM</option>
+  </select>
+
+  <input id="namaPetugas" placeholder="Nama petugas (mis. Budi)">
+
   <button onclick="startScan()">Mulai Scan</button>
-  <div id="reader"></div>
+  <div class="scan-wrap">
+    <div id="reader"></div>
+    <div id="garisScan"></div>
+  </div>
 
   <div class="manual-row">
     <input id="kodeManual" placeholder="Atau ketik kode barang manual">
@@ -55,22 +84,30 @@
   <div id="hasilCek"></div>
 
   <div class="riwayat-box" id="riwayatBox" style="display:none">
-    <h4>Riwayat cek hari ini (<span id="jmlRiwayat">0</span>)</h4>
+    <h4>Riwayat cek hari ini - <span id="namaTokoRiwayat"></span> (<span id="jmlRiwayat">0</span>)</h4>
     <div id="listRiwayat"></div>
-    <button class="btn-hapus" onclick="hapusRiwayat()">Hapus riwayat</button>
+    <button class="btn-refresh" onclick="muatRiwayat()">Perbarui riwayat</button>
   </div>
 
 <script>
 const API_URL = "https://script.google.com/macros/s/AKfycbxw5Pum7Bk-cSStTDnCb-V3FBNMAcOEafjUxXGGYXJDcDA_nmQryi9IaALyPyuu-BK6/exec";
 
 const KEY_LAST = "cekpo_last";
-const KEY_RIWAYAT = "cekpo_riwayat";
+const KEY_PETUGAS = "cekpo_petugas";
+const KEY_TOKO = "cekpo_toko";
 
 let scanner;
+let sedangProses = false;
+let riwayatServer = [];
 
-/* ===== Penyimpanan di HP (aman dari error) ===== */
+/* ===== Util ===== */
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function tanggalHariIni() {
-  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD sesuai zona waktu HP
+  return new Date().toLocaleDateString("en-CA");
 }
 
 function simpanLokal(key, nilai) {
@@ -81,88 +118,159 @@ function bacaLokal(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
 }
 
-function ambilRiwayatHariIni() {
-  const semua = bacaLokal(KEY_RIWAYAT) || [];
-  const hariIni = tanggalHariIni();
-  return semua.filter(function (r) { return r.tgl === hariIni; });
+/* ===== Toko & petugas ===== */
+function tokoDipilih() {
+  return document.getElementById("tokoPilih").value;
 }
 
-// Hitung sudah berapa kali kode ini di-scan hari ini
-function hitungScan(kode) {
-  const k = String(kode).trim();
-  return ambilRiwayatHariIni().filter(function (r) {
-    return String(r.kode).trim() === k;
-  }).length;
+function namaTokoDipilih() {
+  const sel = document.getElementById("tokoPilih");
+  return sel.options[sel.selectedIndex].text;
 }
 
-function tambahRiwayat(kode, nama, ditemukan, jumlah) {
-  const list = ambilRiwayatHariIni();
-  const jam = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-  list.unshift({ tgl: tanggalHariIni(), jam: jam, kode: kode, nama: nama, ditemukan: ditemukan, jumlah: jumlah });
-  simpanLokal(KEY_RIWAYAT, list.slice(0, 200));
+function namaPetugas() {
+  return (document.getElementById("namaPetugas").value || "").trim() || "Tanpa nama";
+}
+
+function pastikanTokoDipilih() {
+  if (!tokoDipilih()) {
+    alert("Pilih toko dulu");
+    return false;
+  }
+  return true;
+}
+
+document.getElementById("tokoPilih").value = bacaLokal(KEY_TOKO) || "";
+document.getElementById("namaPetugas").value = bacaLokal(KEY_PETUGAS) || "";
+
+document.getElementById("namaPetugas").addEventListener("input", function () {
+  simpanLokal(KEY_PETUGAS, this.value);
+});
+
+document.getElementById("tokoPilih").addEventListener("change", function () {
+  simpanLokal(KEY_TOKO, this.value);
+  document.getElementById("hasilCek").innerHTML = "";
+  riwayatServer = [];
   tampilRiwayat();
+  muatRiwayat();
+});
+
+/* ===== Riwayat dari Google Sheet (per toko, dipakai bersama) ===== */
+function muatRiwayat() {
+  const toko = tokoDipilih();
+  if (!toko) { riwayatServer = []; tampilRiwayat(); return; }
+  fetch(API_URL + "?aksi=riwayat&toko=" + encodeURIComponent(toko))
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      if (toko !== tokoDipilih()) return; // toko sudah diganti saat menunggu
+      if (res && res.ok) {
+        riwayatServer = res.items || [];
+        tampilRiwayat();
+      }
+    })
+    .catch(function () {});
 }
 
 function tampilRiwayat() {
-  const list = ambilRiwayatHariIni();
+  const list = riwayatServer;
   const box = document.getElementById("riwayatBox");
-  if (list.length === 0) { box.style.display = "none"; return; }
+  if (!tokoDipilih() || list.length === 0) { box.style.display = "none"; return; }
   box.style.display = "block";
+  document.getElementById("namaTokoRiwayat").textContent = namaTokoDipilih();
   document.getElementById("jmlRiwayat").textContent = list.length;
 
-  // Hitung jumlah scan per kode
   const hitung = {};
   list.forEach(function (r) {
-    const k = String(r.kode).trim();
+    const k = String(r.kode).toUpperCase();
     hitung[k] = (hitung[k] || 0) + 1;
   });
 
   let html = "";
   list.forEach(function (r) {
-    const k = String(r.kode).trim();
-    const dobel = hitung[k] > 1;
+    const n = hitung[String(r.kode).toUpperCase()];
+    const dobel = n > 1;
     html += '<div class="rw' + (dobel ? ' merah' : '') + '"><div class="kiri"><div>' +
-            r.kode + (r.nama ? " - " + r.nama : "") +
-            (dobel ? " (" + hitung[k] + "x scan)" : "") + '</div>' +
-            '<div class="jam">' + r.jam + '</div></div>' +
+            esc(r.kode) + (r.nama ? " - " + esc(r.nama) : "") +
+            (dobel ? " (" + n + "x scan)" : "") + '</div>' +
+            '<div class="jam">' + esc(String(r.jam).substring(0, 5)) + " · " + esc(r.petugas) + '</div></div>' +
             (r.ditemukan
-              ? '<div class="ok">ADA (' + r.jumlah + ' PO)</div>'
+              ? '<div class="ok">ADA (' + esc(r.jumlah) + ' PO)</div>'
               : '<div class="no">TIDAK ADA</div>') +
             '</div>';
   });
   document.getElementById("listRiwayat").innerHTML = html;
 }
 
-function hapusRiwayat() {
-  if (!confirm("Hapus semua riwayat hari ini?")) return;
-  simpanLokal(KEY_RIWAYAT, []);
-  tampilRiwayat();
+function catatKeServer(kode, nama, ditemukan, jumlah) {
+  const url = API_URL + "?aksi=catat" +
+    "&toko=" + encodeURIComponent(tokoDipilih()) +
+    "&kode=" + encodeURIComponent(kode) +
+    "&nama=" + encodeURIComponent(nama || "") +
+    "&petugas=" + encodeURIComponent(namaPetugas()) +
+    "&ditemukan=" + (ditemukan ? 1 : 0) +
+    "&jumlah=" + encodeURIComponent(jumlah);
+  return fetch(url).then(function (r) { return r.json(); });
 }
 
 function pulihkanHasilTerakhir() {
   const last = bacaLokal(KEY_LAST);
-  if (last && last.tgl === tanggalHariIni() && last.html) {
+  if (last && last.tgl === tanggalHariIni() && last.toko === tokoDipilih() && last.html) {
     document.getElementById("hasilCek").innerHTML =
       '<div class="ringkas">Hasil terakhir (dipulihkan)</div>' + last.html;
   }
 }
 
+/* ===== Garis penanda scan ===== */
+function tampilGaris() {
+  const g = document.getElementById("garisScan");
+  g.classList.remove("sukses");
+  g.style.display = "block";
+}
+
+function garisSukses() {
+  document.getElementById("garisScan").classList.add("sukses");
+  try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) {}
+}
+
+function sembunyiGaris() {
+  const g = document.getElementById("garisScan");
+  g.style.display = "none";
+  g.classList.remove("sukses");
+}
+
 /* ===== Scan & pencarian ===== */
 function startScan() {
-  scanner = new Html5Qrcode("reader");
+  if (!pastikanTokoDipilih()) return;
+  sedangProses = false;
+  scanner = new Html5Qrcode("reader", {
+    formatsToSupport: [ Html5QrcodeSupportedFormats.CODE_39 ]
+  });
   scanner.start(
     { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
+    { fps: 10, qrbox: { width: 300, height: 120 } },
     onScanSuccess
-  );
+  ).then(function () {
+    tampilGaris();
+  }).catch(function (err) {
+    sembunyiGaris();
+    alert("Kamera tidak bisa dibuka: " + err);
+  });
 }
 
 function onScanSuccess(kode) {
-  scanner.stop();
+  if (sedangProses) return;
+  sedangProses = true;
+
+  garisSukses();
   cariBarang(kode);
+
+  setTimeout(function () {
+    scanner.stop().then(sembunyiGaris).catch(sembunyiGaris);
+  }, 700);
 }
 
 function cariManual() {
+  if (!pastikanTokoDipilih()) return;
   const kode = document.getElementById("kodeManual").value.trim();
   if (!kode) { alert("Ketik kode barang dulu"); return; }
   cariBarang(kode);
@@ -170,51 +278,67 @@ function cariManual() {
 
 function cariBarang(kode) {
   const hasilDiv = document.getElementById("hasilCek");
+  const toko = tokoDipilih();
   hasilDiv.innerHTML = '<div class="loading">Mencari...</div>';
 
-  fetch(API_URL + "?kode=" + encodeURIComponent(kode))
-    .then(r => r.json())
-    .then(data => {
-      // Scan ke berapa hari ini (sebelum riwayat ditambah)
-      const scanKe = hitungScan(kode) + 1;
+  fetch(API_URL + "?toko=" + encodeURIComponent(toko) + "&kode=" + encodeURIComponent(kode))
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) throw new Error(data.error);
+
+      const ditemukan = !!data.found;
+      const nama = ditemukan ? data.items[0].nama : "";
+      const jumlah = ditemukan ? data.jumlah : 0;
+
+      return catatKeServer(kode, nama, ditemukan, jumlah)
+        .then(function (res) { return { data: data, res: res }; })
+        .catch(function () { return { data: data, res: null }; });
+    })
+    .then(function (paket) {
+      const data = paket.data;
+      const res = paket.res;
+      const catatOk = res && res.ok;
+      const scanKe = catatOk ? res.scanKe : 1;
       const dobel = scanKe > 1;
 
-      let html = "";
+      let html = '<div class="ringkas">' + esc(namaTokoDipilih()) + '</div>';
+      if (!catatOk) {
+        html += '<div class="info-gagal">Gagal mencatat ke server. Hitungan scan dobel mungkin belum akurat.</div>';
+      }
       if (dobel) {
-        html += '<div class="peringatan">⚠ Kode ini sudah di-scan ' + scanKe + ' kali hari ini</div>';
+        html += '<div class="peringatan">⚠ Kode ini sudah di-scan ' + scanKe + ' kali hari ini di ' + esc(namaTokoDipilih()) + '</div>';
       }
 
       if (data.found) {
         html += '<div class="ringkas">Ditemukan di ' + data.jumlah + ' PO</div>';
-        data.items.forEach(item => {
-          html += `
-            <div class="kartu${dobel ? ' dobel' : ''}">
-              <div class="kode">Kode: ${item.kode}</div>
-              <div class="nama">${item.nama}</div>
-              <div class="baris"><span>Supplier</span><span>${item.supplier}</span></div>
-              <div class="baris"><span>Tanggal PO</span><span>${item.tgl_po}</span></div>
-              <div class="baris"><span>No. PO</span><span>${item.no_po}</span></div>
-              <div class="baris"><span>Qty Order</span><span class="qty">${item.qty_order}</span></div>
-            </div>`;
+        data.items.forEach(function (item) {
+          html += '<div class="kartu' + (dobel ? ' dobel' : '') + '">' +
+            '<div class="kode">Kode: ' + esc(item.kode) + '</div>' +
+            '<div class="nama">' + esc(item.nama) + '</div>' +
+            '<div class="baris"><span>Supplier</span><span>' + esc(item.supplier) + '</span></div>' +
+            '<div class="baris"><span>Tanggal PO</span><span>' + esc(item.tgl_po) + '</span></div>' +
+            '<div class="baris"><span>No. PO</span><span>' + esc(item.no_po) + '</span></div>' +
+            '<div class="baris"><span>Qty Order</span><span class="qty">' + esc(item.qty_order) + '</span></div>' +
+            '</div>';
         });
-        tambahRiwayat(kode, data.items[0].nama, true, data.jumlah);
       } else {
-        html += `<div class="tidak-ada"><b>Kode ${kode} TIDAK ADA di Master PO</b><br>Barang ini mungkin tidak dipesan atau salah kode.</div>`;
-        tambahRiwayat(kode, "", false, 0);
+        html += '<div class="tidak-ada"><b>Kode ' + esc(kode) + ' TIDAK ADA di PO ' + esc(namaTokoDipilih()) + '</b><br>Barang ini mungkin tidak dipesan atau salah kode.</div>';
       }
 
       hasilDiv.innerHTML = html;
-      simpanLokal(KEY_LAST, { tgl: tanggalHariIni(), html: html });
+      simpanLokal(KEY_LAST, { tgl: tanggalHariIni(), toko: toko, html: html });
       document.getElementById("kodeManual").value = "";
+      muatRiwayat();
     })
-    .catch(err => {
-      hasilDiv.innerHTML = '<div class="tidak-ada"><b>Terjadi error:</b><br>' + err.message + '</div>';
+    .catch(function (err) {
+      hasilDiv.innerHTML = '<div class="tidak-ada"><b>Terjadi error:</b><br>' + esc(err.message) + '</div>';
     });
 }
 
 /* ===== Saat halaman dibuka ===== */
 pulihkanHasilTerakhir();
-tampilRiwayat();
+muatRiwayat();
+setInterval(muatRiwayat, 15000); // perbarui otomatis tiap 15 detik
 </script>
 </body>
 </html>
