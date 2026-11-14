@@ -10,7 +10,7 @@
   h3 { margin: 8px 0 12px; }
   input, select, button { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; box-sizing: border-box; }
   button { background: #2563eb; color: white; border: none; border-radius: 8px; }
-  #namaPetugas, #tokoPilih { border: 1px solid #94a3b8; border-radius: 8px; background: white; }
+  #tokoPilih, #namaPetugas { border: 1px solid #94a3b8; border-radius: 8px; background: white; }
   #reader { width: 100%; }
   .manual-row { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
   .manual-row input { flex: 1; margin: 0; border: 1px solid #94a3b8; border-radius: 8px; }
@@ -26,21 +26,6 @@
   .tidak-ada { background: #fee2e2; color: #991b1b; border-radius: 10px; padding: 14px; margin-top: 14px; border-left: 6px solid #dc2626; }
   .loading { background: #eef2ff; border-radius: 10px; padding: 14px; margin-top: 14px; }
   .info-gagal { background: #fef9c3; color: #854d0e; border-radius: 10px; padding: 10px 14px; margin-top: 14px; font-size: 14px; }
-
-  /* Garis penanda scan (diam di tengah) */
-  .scan-wrap { position: relative; }
-  #garisScan {
-    display: none; position: absolute; left: 5%; width: 90%; height: 3px;
-    background: #dc2626; box-shadow: 0 0 8px #dc2626; top: 50%;
-    z-index: 5; pointer-events: none;
-  }
-  #garisScan.sukses { height: 4px; background: #16a34a; box-shadow: 0 0 12px #16a34a; }
-  #garisScan.sukses::after {
-    content: "✓ TERSCAN"; position: absolute; top: -30px; left: 50%;
-    transform: translateX(-50%); background: #16a34a; color: #fff;
-    padding: 3px 12px; border-radius: 6px; font-size: 14px;
-    font-weight: bold; white-space: nowrap;
-  }
 
   /* Tanda scan dobel */
   .peringatan { background: #fee2e2; color: #dc2626; font-weight: bold; border-radius: 10px; padding: 10px 14px; margin-top: 14px; border: 1px solid #dc2626; font-size: 15px; }
@@ -61,7 +46,7 @@
 <body>
   <h3>Cek Barang Datang vs Master PO</h3>
 
-   <select id="tokoPilih">
+  <select id="tokoPilih">
     <option value="">-- Pilih toko --</option>
     <option value="1">BUDIMAN SIMPANG TIGA</option>
     <option value="2">BUDIMAN ARIFIN AHMAD</option>
@@ -71,10 +56,7 @@
   <input id="namaPetugas" placeholder="Nama petugas (mis. Budi)">
 
   <button onclick="startScan()">Mulai Scan</button>
-  <div class="scan-wrap">
-    <div id="reader"></div>
-    <div id="garisScan"></div>
-  </div>
+  <div id="reader"></div>
 
   <div class="manual-row">
     <input id="kodeManual" placeholder="Atau ketik kode barang manual">
@@ -107,7 +89,7 @@ function esc(s) {
 }
 
 function tanggalHariIni() {
-  return new Date().toLocaleDateString("en-CA");
+  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD sesuai zona waktu HP
 }
 
 function simpanLokal(key, nilai) {
@@ -220,53 +202,23 @@ function pulihkanHasilTerakhir() {
   }
 }
 
-/* ===== Garis penanda scan ===== */
-function tampilGaris() {
-  const g = document.getElementById("garisScan");
-  g.classList.remove("sukses");
-  g.style.display = "block";
-}
-
-function garisSukses() {
-  document.getElementById("garisScan").classList.add("sukses");
-  try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) {}
-}
-
-function sembunyiGaris() {
-  const g = document.getElementById("garisScan");
-  g.style.display = "none";
-  g.classList.remove("sukses");
-}
-
 /* ===== Scan & pencarian ===== */
 function startScan() {
   if (!pastikanTokoDipilih()) return;
   sedangProses = false;
-  scanner = new Html5Qrcode("reader", {
-    formatsToSupport: [ Html5QrcodeSupportedFormats.CODE_39 ]
-  });
+  scanner = new Html5Qrcode("reader");
   scanner.start(
     { facingMode: "environment" },
-    { fps: 10, qrbox: { width: 300, height: 120 } },
+    { fps: 10, qrbox: 250 },
     onScanSuccess
-  ).then(function () {
-    tampilGaris();
-  }).catch(function (err) {
-    sembunyiGaris();
-    alert("Kamera tidak bisa dibuka: " + err);
-  });
+  );
 }
 
 function onScanSuccess(kode) {
-  if (sedangProses) return;
+  if (sedangProses) return; // cegah terbaca dan tercatat berkali-kali
   sedangProses = true;
-
-  garisSukses();
+  scanner.stop();
   cariBarang(kode);
-
-  setTimeout(function () {
-    scanner.stop().then(sembunyiGaris).catch(sembunyiGaris);
-  }, 700);
 }
 
 function cariManual() {
